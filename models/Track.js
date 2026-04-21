@@ -79,15 +79,9 @@ const Track = sequelize.define('Track', {
 }, {
   tableName: 'tracks',
   indexes: [
-    {
-      fields: ['artist_id']
-    },
-    {
-      fields: ['genre']
-    },
-    {
-      fields: ['play_count']
-    }
+    { fields: ['artist_id'] },
+    { fields: ['genre'] },
+    { fields: ['play_count'] }
   ]
 });
 

@@ -1,24 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const trackController = require('../controllers/trackController');
+const { authenticate, optionalAuth } = require('../middleware/auth');
 const { validateTrack, validateIdParam } = require('../middleware/validation');
 
-// GET /api/tracks - Get all tracks
-router.get('/', trackController.getAllTracks);
-
-// GET /api/tracks/:id - Get track by ID
-router.get('/:id', validateIdParam, trackController.getTrackById);
-
-// GET /api/tracks/:id/stats - Get track statistics
+// Public routes (with optional auth for play tracking)
+router.get('/', optionalAuth, trackController.getAllTracks);
+router.get('/:id', optionalAuth, validateIdParam, trackController.getTrackById);
 router.get('/:id/stats', validateIdParam, trackController.getTrackStats);
 
-// POST /api/tracks - Create new track
-router.post('/', validateTrack, trackController.createTrack);
-
-// PUT /api/tracks/:id - Update track
-router.put('/:id', validateIdParam, validateTrack, trackController.updateTrack);
-
-// DELETE /api/tracks/:id - Delete track
-router.delete('/:id', validateIdParam, trackController.deleteTrack);
+// Protected routes (require authentication)
+router.post('/', authenticate, validateTrack, trackController.createTrack);
+router.put('/:id', authenticate, validateIdParam, validateTrack, trackController.updateTrack);
+router.delete('/:id', authenticate, validateIdParam, trackController.deleteTrack);
 
 module.exports = router;

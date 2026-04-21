@@ -1,10 +1,8 @@
-const Track = require('../models/Track');
-const User = require('../models/User');
-const Interaction = require('../models/Interaction');
+const { Track, User, Interaction } = require('../models');
 const { sequelize } = require('../database/db');
 
 const trackController = {
-  // Get all tracks with optional filtering
+  // Get all tracks (public, with optional filtering)
   async getAllTracks(req, res, next) {
     try {
       const { genre, artist_id, limit = 50, offset = 0 } = req.query;
@@ -12,7 +10,11 @@ const trackController = {
       
       if (genre) where.genre = genre;
       if (artist_id) where.artist_id = artist_id;
-      where.is_published = true;
+      
+      // Only show published tracks to non-artists
+      if (!req.user || req.user.role !== 'admin') {
+        where.is_published = true;
+      }
       
       const tracks = await Track.findAndCountAll({
         where,
@@ -37,7 +39,7 @@ const trackController = {
     }
   },
   
-  // Get single track by ID
+  // Get single track by ID (with optional play recording)
   async getTrackById(req, res, next) {
     try {
       const track = await Track.findByPk(req.params.id, {
@@ -52,17 +54,22 @@ const trackController = {
         return res.status(404).json({ error: 'Track not found' });
       }
       
-      // Increment play count when track is fetched (for streaming)
-      if (req.query.record_play === 'true') {
-        await track.increment('play_count');
-        // Record interaction if user is authenticated
-        if (req.user) {
+      // Record play if requested (and user is authenticated)
+      if (req.query.record_play === 'true' && req.user) {
+        // Use transaction to ensure consistency
+        const transaction = await sequelize.transaction();
+        try {
+          await track.increment('play_count', { transaction });
           await Interaction.create({
             user_id: req.user.id,
             track_id: track.id,
             type: 'play',
             metadata: { source: 'api_stream', timestamp: new Date() }
-          });
+          }, { transaction });
+          await transaction.commit();
+        } catch (error) {
+          await transaction.rollback();
+          console.error('Failed to record play:', error);
         }
       }
       
@@ -72,14 +79,19 @@ const trackController = {
     }
   },
   
-  // Create new track
+  // Create new track (artists only)
   async createTrack(req, res, next) {
     try {
-      // For MVP, we'll assume user ID 1 for artists
-      // In production with auth, this would come from req.user.id
+      // Only artists and admins can create tracks
+      if (req.user.role !== 'artist' && req.user.role !== 'admin') {
+        return res.status(403).json({ 
+          error: 'Only artists can upload tracks' 
+        });
+      }
+      
       const trackData = {
         ...req.body,
-        artist_id: req.body.artist_id || 1 // Temporary for MVP
+        artist_id: req.user.role === 'admin' ? (req.body.artist_id || req.user.id) : req.user.id
       };
       
       const track = await Track.create(trackData);
@@ -89,7 +101,7 @@ const trackController = {
     }
   },
   
-  // Update track
+  // Update track (owner or admin only)
   async updateTrack(req, res, next) {
     try {
       const track = await Track.findByPk(req.params.id);
@@ -98,8 +110,13 @@ const trackController = {
         return res.status(404).json({ error: 'Track not found' });
       }
       
-      // Only artist or admin can update
-      // For MVP, allow any update
+      // Check ownership
+      if (req.user.role !== 'admin' && track.artist_id !== req.user.id) {
+        return res.status(403).json({ 
+          error: 'You can only edit your own tracks' 
+        });
+      }
+      
       await track.update(req.body);
       res.json(track);
     } catch (error) {
@@ -107,13 +124,20 @@ const trackController = {
     }
   },
   
-  // Delete track
+  // Delete track (owner or admin only)
   async deleteTrack(req, res, next) {
     try {
       const track = await Track.findByPk(req.params.id);
       
       if (!track) {
         return res.status(404).json({ error: 'Track not found' });
+      }
+      
+      // Check ownership
+      if (req.user.role !== 'admin' && track.artist_id !== req.user.id) {
+        return res.status(403).json({ 
+          error: 'You can only delete your own tracks' 
+        });
       }
       
       await track.destroy();
@@ -123,7 +147,7 @@ const trackController = {
     }
   },
   
-  // Get track statistics
+  // Get track statistics (public)
   async getTrackStats(req, res, next) {
     try {
       const track = await Track.findByPk(req.params.id);

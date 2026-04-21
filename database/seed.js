@@ -1,7 +1,4 @@
-const { sequelize } = require('./db');
-const User = require('../models/User');
-const Track = require('../models/Track');
-const Interaction = require('../models/Interaction');
+const { sequelize, User, Track, Interaction } = require('../models');
 const bcrypt = require('bcryptjs');
 
 async function seedDatabase() {
@@ -45,8 +42,8 @@ async function seedDatabase() {
       },
       {
         name: 'Admin User',
-        email: 'admin@example.com',
-        password: 'admin123',
+        email: process.env.ADMIN_EMAIL || 'admin@example.com',
+        password: process.env.ADMIN_PASSWORD || 'admin123',
         role: 'admin',
         bio: 'Platform Administrator',
         is_verified: true
@@ -113,63 +110,29 @@ async function seedDatabase() {
     
     // Create Interactions
     const interactions = await Interaction.bulkCreate([
-      {
-        user_id: 3,
-        track_id: 1,
-        type: 'play',
-        metadata: { source: 'discovery', timestamp: new Date() }
-      },
-      {
-        user_id: 3,
-        track_id: 1,
-        type: 'like',
-        metadata: { liked_at: new Date() }
-      },
-      {
-        user_id: 4,
-        track_id: 1,
-        type: 'play',
-        metadata: { source: 'search', timestamp: new Date() }
-      },
-      {
-        user_id: 4,
-        track_id: 2,
-        type: 'like',
-        metadata: { liked_at: new Date() }
-      },
-      {
-        user_id: 3,
-        track_id: 2,
-        type: 'comment',
-        comment_text: 'This track is amazing! Love the beat 🔥',
-        metadata: { posted_at: new Date() }
-      },
-      {
-        user_id: 4,
-        track_id: 1,
-        type: 'purchase',
-        purchase_amount: 5.00,
-        metadata: { purchase_date: new Date() }
-      }
+      { user_id: 3, track_id: 1, type: 'play', metadata: { source: 'discovery' } },
+      { user_id: 3, track_id: 1, type: 'like', metadata: { liked_at: new Date() } },
+      { user_id: 4, track_id: 1, type: 'play', metadata: { source: 'search' } },
+      { user_id: 4, track_id: 2, type: 'like', metadata: { liked_at: new Date() } },
+      { user_id: 3, track_id: 2, type: 'comment', comment_text: 'This track is amazing! Love the beat 🔥' },
+      { user_id: 4, track_id: 1, type: 'purchase', purchase_amount: 5.00 }
     ]);
     
     console.log(`Created ${interactions.length} interactions`);
     
-    // Update track counts based on interactions
-    await sequelize.query(`
-      UPDATE tracks 
-      SET play_count = (
-        SELECT COUNT(*) FROM interactions 
-        WHERE interactions.track_id = tracks.id AND interactions.type = 'play'
-      ),
-      like_count = (
-        SELECT COUNT(*) FROM interactions 
-        WHERE interactions.track_id = tracks.id AND interactions.type = 'like'
-      )
-    `);
+    // Update track counts
+    for (const track of tracks) {
+      const playCount = await Interaction.count({ where: { track_id: track.id, type: 'play' } });
+      const likeCount = await Interaction.count({ where: { track_id: track.id, type: 'like' } });
+      await track.update({ play_count: playCount, like_count: likeCount });
+    }
     
     console.log('Updated track statistics');
-    console.log('Database seeding complete!');
+    console.log('\n📊 Test Credentials:');
+    console.log('Artist: maya@example.com / password123');
+    console.log('Fan: sarah@example.com / password123');
+    console.log('Admin: admin@example.com / admin123');
+    console.log('\nDatabase seeding complete!');
     process.exit(0);
   } catch (error) {
     console.error('Error seeding database:', error);
